@@ -1,0 +1,330 @@
+<!DOCTYPE html> 
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPC Tool | Home</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+
+
+    <script>
+        function updateForm() {
+            let behavior = document.getElementById("behavior").value;
+            document.getElementById("stable_fields").classList.add("hidden");
+            document.getElementById("trending_fields").classList.add("hidden");
+            document.getElementById("periodic_fields").classList.add("hidden");
+            
+            if (behavior === "stable") document.getElementById("stable_fields").classList.remove("hidden");
+            else if (behavior === "trending") document.getElementById("trending_fields").classList.remove("hidden");
+            else if (behavior === "periodic") document.getElementById("periodic_fields").classList.remove("hidden");
+
+
+            let induce = document.getElementById("induce_change").value;
+            let changeDiv = document.getElementById("change_settings");
+            
+            if (induce === "yes") {
+                changeDiv.classList.remove("hidden");
+                let cType = document.getElementById("change_type").value;
+                document.getElementById("step_fields").classList.add("hidden");
+                document.getElementById("trend_change_fields").classList.add("hidden");
+
+
+                if (cType === "step") document.getElementById("step_fields").classList.remove("hidden");
+                else if (cType === "trending") document.getElementById("trend_change_fields").classList.remove("hidden");
+            } else {
+                changeDiv.classList.add("hidden");
+            }
+
+
+            let method = document.getElementById("analysis_method").value;
+            let ewmaOpts = document.getElementById("ewma_options");
+            let alphaOpts = document.getElementById("alpha_options");
+            
+            if (method === "ewma" || method === "mc-ewma") ewmaOpts.classList.remove("hidden");
+            else ewmaOpts.classList.add("hidden");
+
+
+            if (method === "farrington" || method === "glm" || method === "cusum") alphaOpts.classList.remove("hidden");
+            else alphaOpts.classList.add("hidden");
+        }
+
+
+        function toggleSource() {
+            const source = document.querySelector('input[name="data_source"]:checked').value;
+            if (source === "upload") {
+                document.getElementById("upload_field").classList.remove("hidden");
+                document.getElementById("manual_stats_field").classList.add("hidden");
+            } else {
+                document.getElementById("upload_field").classList.add("hidden");
+                document.getElementById("manual_stats_field").classList.remove("hidden");
+            }
+        }
+
+
+        function clearResults() {
+            fetch('/clear', { method: 'POST' }).then(() => window.location.reload());
+        }
+    </script>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+
+    <nav class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <span class="font-bold text-xl text-blue-600"><i class="fas fa-chart-line mr-2"></i>SPC Tool</span>
+                    </div>
+                    <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+                        <a href="/" class="border-blue-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Home</a>
+                        <a href="/instructions" class="border-transparent text-gray-500 hover:border-blue-300 hover:text-blue-600 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition">Instructions</a>
+                        {% if session.get('full_params') %}
+                        <a href="/reanalyze" class="border-transparent text-gray-500 hover:border-blue-300 hover:text-blue-600 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition">Reanalyze</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+
+    <div class="bg-gradient-to-r from-blue-700 to-cyan-600 pb-24 pt-12 border-b border-blue-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h1 class="text-4xl font-extrabold text-white sm:text-5xl lg:text-6xl drop-shadow-sm">TrendWatch</h1>
+            <p class="mt-4 max-w-2xl mx-auto text-xl text-blue-50">Simulate and analyze statistical process control charts.</p>
+        </div>
+    </div>
+
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-16 pb-12">
+        {% if error %}
+        <div class="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-6 shadow-md rounded-r-md">
+            <p class="font-bold">Notice</p>
+            <p>{{ error }}</p>
+        </div>
+        {% endif %}
+
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-1">
+                <form method="POST" action="/" enctype="multipart/form-data" class="bg-white shadow-xl rounded-xl border-t-4 border-blue-500 p-6 space-y-6">
+                    <h2 class="text-xl font-semibold text-gray-900 border-b pb-2">Configuration</h2>
+                    
+                    <div>
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Data Source</h3>
+                        <div class="flex items-center space-x-4 mb-4 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <label class="inline-flex items-center cursor-pointer">
+                                <input type="radio" name="data_source" value="simulation" checked onchange="toggleSource()" class="form-radio text-blue-600 focus:ring-blue-500">
+                                <span class="ml-2 text-sm font-bold text-gray-700">Manual Stats</span>
+                            </label>
+                            <label class="inline-flex items-center cursor-pointer">
+                                <input type="radio" name="data_source" value="upload" onchange="toggleSource()" class="form-radio text-blue-600 focus:ring-blue-500">
+                                <span class="ml-2 text-sm font-bold text-gray-700">Upload CSV</span>
+                            </label>
+                        </div>
+
+
+                        <div id="upload_field" class="hidden bg-blue-50 p-4 rounded-md border border-blue-200 mb-4">
+                            <label class="block text-sm font-bold text-blue-800 mb-2">Upload Baseline Data</label>
+                            <input type="file" name="csv_file" accept=".csv" class="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200"/>
+                        </div>
+
+
+                        <div id="manual_stats_field">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Behavior</label>
+                            <select name="behavior" id="behavior" onchange="updateForm()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 text-sm mb-3">
+                                <option value="stable">Stable</option>
+                                <option value="trending">Trending</option>
+                                <option value="periodic">Periodic</option>
+                            </select>
+                            
+                            <div id="stable_fields" class="bg-gray-50 p-3 rounded-md border border-gray-200">
+                                <label class="block text-xs font-bold text-gray-500">Mean</label><input type="number" step="0.1" name="mean" value="100" class="w-full mb-2 p-1 border rounded text-sm bg-white">
+                                <label class="block text-xs font-bold text-gray-500">Std Dev</label><input type="number" step="0.1" name="std" value="10" class="w-full p-1 border rounded text-sm bg-white">
+                            </div>
+                            
+                            <div id="trending_fields" class="hidden bg-gray-50 p-3 rounded-md border border-gray-200">
+                                <label class="block text-xs font-bold text-gray-500">Start Value</label><input type="number" step="0.1" name="start" value="100" class="w-full mb-2 p-1 border rounded text-sm bg-white">
+                                <label class="block text-xs font-bold text-gray-500">Slope</label><input type="number" step="0.01" name="slope" value="0.5" class="w-full mb-2 p-1 border rounded text-sm bg-white">
+                            </div>
+
+
+                            <div id="periodic_fields" class="hidden bg-gray-50 p-3 rounded-md border border-gray-200">
+                                <label class="block text-xs font-bold text-gray-500">Mean</label><input type="number" step="0.1" name="p_mean" value="100" class="w-full mb-2 p-1 border rounded text-sm bg-white">
+                                <label class="block text-xs font-bold text-gray-500">Amplitude</label><input type="number" step="0.1" name="amplitude" value="20" class="w-full mb-2 p-1 border rounded text-sm bg-white">
+                                <label class="block text-xs font-bold text-gray-500">Period</label><input type="number" name="period" value="50" class="w-full p-1 border rounded text-sm bg-white">
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div>
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Generation Settings</h3>
+                        <div class="space-y-3 bg-gray-50 p-3 rounded-md border border-gray-200">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Distribution Type</label>
+                                <select name="dist_type" class="block w-full rounded-md border-gray-300 shadow-sm text-sm p-2 bg-white">
+                                    <option value="normal">Normal</option>
+                                    <option value="lognormal">Lognormal</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Baseline Duration (Days)</label>
+                                <input type="number" name="n_baseline" value="50" class="block w-full rounded-md border-gray-300 shadow-sm text-sm p-2 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Replications (Runs)</label>
+                                <input type="number" name="n_replications" value="100" class="block w-full rounded-md border-gray-300 shadow-sm text-sm p-2 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Sigma Multiplier</label>
+                                <input type="number" step="0.1" name="sigma_multiplier" value="3.0" class="block w-full rounded-md border-gray-300 shadow-sm text-sm p-2 bg-white">
+                            </div>
+                            <div>
+                            <label class="block text-xs font-bold text-gray-500 mb-1">
+                                Latest acceptable detection time (days)
+                            </label>
+                            <input
+                            type="number"
+                            step="1"
+                            name="late_threshold"
+                            value="30"
+                            class="block w-full rounded-md border-gray-300 shadow-sm text-sm p-2 bg-white"
+                            required>
+                            <p class="mt-1 text-[11px] text-gray-400">
+                              Used to compute “% detected within X days” & shown as a vertical line on the run length histogram.
+                            </p>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div>
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Induce Change</h3>
+                        <select name="induce_change" id="induce_change" onchange="updateForm()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 text-sm mb-3 bg-white">
+                            <option value="no">No</option>
+                            <option value="yes">Yes</option>
+                        </select>
+                        <div id="change_settings" class="hidden bg-gray-50 p-3 rounded-md border border-gray-200 space-y-3">
+                            <div><label class="text-[10px] font-bold text-gray-500">Change Day</label><input type="number" name="change_day" value="50" class="w-full p-2 border rounded text-sm bg-white"></div>
+                            <div>
+                                <label class="text-[10px] font-bold text-gray-500">Type</label>
+                                <select name="change_type" id="change_type" onchange="updateForm()" class="w-full p-2 border rounded text-sm bg-white">
+                                    <option value="step">Step Shift</option>
+                                    <option value="trending">Trend Drift</option>
+                                </select>
+                            </div>
+                            <div id="step_fields"><label class="text-[10px] font-bold text-gray-500">Factor</label><input type="number" step="0.01" name="factor" value="1.5" class="w-full p-2 border rounded text-sm bg-white"></div>
+                            <div id="trend_change_fields" class="hidden">
+                                <label class="text-[10px] font-bold text-gray-500">New Slope</label><input type="number" step="0.01" name="change_slope" value="0.2" class="w-full mb-2 p-2 border rounded text-sm bg-white">
+                                <label class="text-[10px] font-bold text-gray-500">Duration</label><input type="number" name="trend_duration" value="50" class="w-full p-2 border rounded text-sm bg-white">
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div>
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Analysis Method</h3>
+                        <select name="analysis_method" id="analysis_method" onchange="updateForm()" class="block w-full rounded-md border-gray-300 shadow-sm p-2 text-sm bg-white">
+                            <option value="shewhart">Shewhart</option>
+                            <option value="ewma">EWMA</option>
+                            <option value="mc-ewma">MC-EWMA</option>
+                            <option value="cusum">CUSUM</option>
+                            <option value="farrington">Farrington</option>
+                            <option value="glm">GLM</option>
+                        </select>
+                        <div id="ewma_options" class="hidden mt-2 p-2 bg-blue-50 border border-blue-100 rounded">
+                             <label class="text-[10px] font-bold text-gray-500">Lambda Mode</label>
+                             <select name="lam_option" class="w-full mb-2 p-1 border rounded bg-white"><option value="manual">Manual</option><option value="optimized">Optimized</option></select>
+                             <label class="text-[10px] font-bold text-gray-500">Lambda Value</label>
+                             <input type="number" step="0.01" name="lambda_val" value="0.2" class="w-full p-1 border rounded text-sm bg-white">
+                        </div>
+                        <div id="alpha_options" class="hidden mt-2 p-2 bg-indigo-50 border border-indigo-100 rounded">
+                             <label class="text-[10px] font-bold text-gray-500">Alpha (α) Value</label>
+                             <input type="number" step="0.01" name="alpha_val" value="0.05" min="0.001" max="0.5" class="w-full p-1 border rounded text-sm bg-white">
+                             <p class="mt-1 text-[10px] text-gray-400 italic">Standard range: 0.01 to 0.05</p>
+                        </div>
+                    </div>
+
+
+                    <div class="pt-4 space-y-3">
+                        <button type="submit" class="w-full py-3 px-4 rounded-lg shadow-sm text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 transition transform hover:scale-[1.02]">Run Simulation</button>
+                        <button type="button" onclick="clearResults()" class="w-full py-2 px-4 border rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition">Clear Results</button>
+                        <a href="/finalize" class="w-full block text-center py-3 px-4 rounded-lg shadow-md text-sm font-bold text-blue-800 bg-blue-100 hover:bg-blue-200 border border-blue-200 transition">
+                            Finalize & Rank Methods
+                        </a>
+                    </div>
+                </form>
+            </div>
+
+
+            <div id="results-container" class="lg:col-span-2 space-y-6">
+                {% if rankings %}
+                <div class="bg-white shadow-xl rounded-xl border border-blue-200 overflow-hidden mb-8">
+                    <div class="bg-gradient-to-r from-blue-700 to-cyan-600 px-6 py-4">
+                        <h2 class="text-lg font-bold text-white flex items-center">
+                            <i class="fas fa-list-ol mr-2"></i> Method Performance Ranking
+                        </h2>
+                        <p class="text-blue-50 text-xs mt-1 font-medium">
+                            <i class="fas fa-info-circle mr-1"></i> Ranked by ARL. 
+                            <span class="underline decoration-dotted" title="Lower ARL means faster detection.">Lower ARL = Faster Detection (Best)</span>
+                        </p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Rank</th>
+                                    <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Method</th>
+                                    <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">ARL</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                {% for run in rankings %}
+                                <tr class="hover:bg-blue-50 transition">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">#{{ loop.index }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ run.title }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-700">{{ run.arl }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+
+
+                {% if results %}
+                    <div class="grid grid-cols-1 gap-8">
+                        {% for result in results|reverse %}
+                            <div class="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-200 w-full transition hover:shadow-2xl">
+                                <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                                    <div class="flex items-center gap-3">
+                                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">{{ result.title }}</h3>
+                                        {% if result.arl %}
+                                        <span class="text-xs font-bold text-slate-500 border-l pl-3 border-gray-300">ARL: {{ result.arl }}</span>
+                                        {% endif %}
+                                    </div>
+                                    <span class="text-xs font-semibold text-blue-600 bg-blue-100 px-2 py-1 rounded">Run #{{ results|length - loop.index0 }}</span>
+                                </div>
+                                <div class="p-4"><img src="data:image/png;base64,{{ result.image }}" class="w-full h-auto rounded-lg shadow-sm"></div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="bg-white shadow-lg rounded-xl p-10 text-center text-gray-500 border h-full flex flex-col justify-center items-center min-h-[400px]">
+                        <div class="bg-blue-50 rounded-full p-6 mb-4"><i class="fas fa-chart-area text-5xl text-blue-200"></i></div>
+                        <h3 class="text-xl font-medium text-gray-900">No results yet</h3>
+                        <p class="mt-2 text-sm text-gray-500">Configure settings and click "Run Simulation".</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <script>updateForm(); toggleSource();</script>
+</body>
+</html>
