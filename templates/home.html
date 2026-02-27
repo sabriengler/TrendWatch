@@ -325,6 +325,65 @@
             </div>
         </div>
     </div>
-    <script>updateForm(); toggleSource();</script>
+    <script>
+    updateForm();
+    toggleSource();
+
+    // ── Polling logic ──────────────────────────────────────────────
+    const jobId = "{{ pending_job_id | default('') }}";
+
+    if (jobId) {
+        // Show a loading overlay on the results panel
+        const container = document.getElementById("results-container");
+        const overlay = document.createElement("div");
+        overlay.id = "loading-overlay";
+        overlay.innerHTML = `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                        min-height:300px;background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.08);
+                        border:1px solid #e5e7eb;padding:40px;">
+                <svg class="animate-spin" style="width:48px;height:48px;color:#2563eb;margin-bottom:16px;"
+                     xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle style="opacity:0.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path style="opacity:0.75" fill="currentColor"
+                          d="M4 12a8 8 0 018-8v8H4z"></path>
+                </svg>
+                <p style="font-size:1.1rem;font-weight:600;color:#1e40af;">Running simulation…</p>
+                <p style="font-size:0.85rem;color:#6b7280;margin-top:6px;">This may take a minute for Farrington/GLM methods.</p>
+                <p id="elapsed-timer" style="font-size:0.8rem;color:#9ca3af;margin-top:4px;">Elapsed: 0s</p>
+            </div>`;
+        // Prepend overlay so existing results are still visible below
+        container.insertBefore(overlay, container.firstChild);
+
+        // Elapsed timer
+        let elapsed = 0;
+        const timerEl = document.getElementById("elapsed-timer");
+        const timerInterval = setInterval(() => {
+            elapsed++;
+            if (timerEl) timerEl.textContent = `Elapsed: ${elapsed}s`;
+        }, 1000);
+
+        // Poll every 3 seconds
+        const poll = setInterval(() => {
+            fetch(`/poll/${jobId}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === "done") {
+                        clearInterval(poll);
+                        clearInterval(timerInterval);
+                        window.location.reload();
+                    } else if (data.status === "error") {
+                        clearInterval(poll);
+                        clearInterval(timerInterval);
+                        overlay.innerHTML = `
+                            <div style="background:#fef2f2;border-left:4px solid #ef4444;padding:16px;border-radius:8px;">
+                                <p style="font-weight:700;color:#b91c1c;">Simulation Error</p>
+                                <p style="color:#dc2626;">${data.message || 'Unknown error'}</p>
+                            </div>`;
+                    }
+                    // status === "running" → keep polling
+                });
+        }, 3000);
+    }
+</script>
 </body>
 </html>
