@@ -708,7 +708,6 @@ def index():
 
         # Create a background job
         job_id = str(uuid.uuid4())
-        jobs[job_id] = {"status": "running"}
 
         sim_kwargs = {
             "behavior": behavior, "params": params, "n_baseline": n_baseline,
@@ -770,7 +769,6 @@ def reanalyze():
         sigma_multiplier = float(request.form.get("sigma_multiplier_re") or fp["sigma_multiplier"])
 
         job_id = str(uuid.uuid4())
-        jobs[job_id] = {"status": "running"}
 
         sim_kwargs = {
             "behavior": fp["behavior"], "params": fp["params"], "n_baseline": fp["n_baseline"],
