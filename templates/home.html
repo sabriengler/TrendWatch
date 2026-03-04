@@ -305,6 +305,39 @@
             </div>
         </div>
     </div>
-    <script>updateForm(); toggleSource();</script>
+        <script>
+        updateForm();
+        toggleSource();
+
+        // ── Polling logic ──────────────────────────────────────
+        const jobId = "{{ pending_job_id | default('') }}";
+
+        if (jobId) {
+            // Show a loading banner
+            const container = document.getElementById("results-container");
+            const banner = document.createElement("div");
+            banner.id = "loading-banner";
+            banner.className = "bg-blue-50 border border-blue-200 rounded-xl p-6 text-center text-blue-700 font-medium shadow";
+            banner.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Running simulation, please wait...`;
+            container.prepend(banner);
+
+            const poll = setInterval(() => {
+                fetch(`/poll/${jobId}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === "done") {
+                            clearInterval(poll);
+                            window.location.reload();
+                        } else if (data.status === "error") {
+                            clearInterval(poll);
+                            banner.className = "bg-red-50 border border-red-200 rounded-xl p-6 text-center text-red-700 font-medium shadow";
+                            banner.innerHTML = `<i class="fas fa-exclamation-triangle mr-2"></i> Error: ${data.message}`;
+                        }
+                        // if "running", do nothing and keep polling
+                    })
+                    .catch(() => clearInterval(poll));
+            }, 2000); // poll every 2 seconds
+        }
+    </script>
 </body>
 </html>
