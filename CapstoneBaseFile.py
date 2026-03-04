@@ -593,32 +593,6 @@ def run_simulation(behavior, params, n_baseline, change, change_day, analysis_me
 
 
 # ─────────────────────────────────────────────
-# Background job runner
-# ─────────────────────────────────────────────
-
-def run_job_in_background(job_id, sim_kwargs):
-    try:
-        # Remove internal keys before passing to run_simulation
-        kwargs = {k: v for k, v in sim_kwargs.items() if not k.startswith('_')}
-        img, arl_value, chart_title, extra_stats = run_simulation(**kwargs)
-        jobs[job_id] = {
-            "status": "done",
-            "result": {
-                "image": img,
-                "title": chart_title,
-                "arl": round(arl_value, 2),
-                "rl_percentiles": extra_stats.get("rl_percentiles"),
-                "detect_within_threshold_count": extra_stats.get("detections_within_x"),
-                "detect_within_threshold_percent": extra_stats.get("percent_within_x"),
-                "late_threshold": extra_stats.get("x_days")
-            },
-            "full_params": sim_kwargs.get("_full_params")
-        }
-    except Exception as e:
-        jobs[job_id] = {"status": "error", "message": str(e)}
-
-
-# ─────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────
 
