@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session 
 from statsmethods import shewhart, ewma, mc_ewma, cusum, farrington, glm
 import numpy as np
 import matplotlib
@@ -12,80 +12,27 @@ from scipy.stats import norm
 import psutil
 import pandas as pd
 from scipy.optimize import minimize_scalar
-import threading
-import uuid
+
 
 app = Flask(__name__)
-app.secret_key = "your_secret_key_here"
-
-# In-memory job store: { job_id: { "status": "running"/"done"/"error", "result": ... } }
-import json
-import os
-import tempfile
-
-# Directory to store job files
-JOB_DIR = tempfile.gettempdir()
-
-def save_job(job_id, data):
-    path = os.path.join(JOB_DIR, f"job_{job_id}.json")
-    with open(path, 'w') as f:
-        json.dump(data, f)
-
-def load_job(job_id):
-    path = os.path.join(JOB_DIR, f"job_{job_id}.json")
-    if not os.path.exists(path):
-        return None
-    with open(path, 'r') as f:
-        return json.load(f)
-
-def delete_job(job_id):
-    path = os.path.join(JOB_DIR, f"job_{job_id}.json")
-    if os.path.exists(path):
-        os.remove(path)
+app.secret_key = "your_secret_key_here"  # Replace with a secure key in production
+nav_bar = """
+<nav>
+    <a href='/'>Home</a> |
+    <a href='/instructions'>Instructions</a> |
+    <a href='/analysis'>Reanalyze</a>
+</nav>
+<hr>
+"""
+previous_results = []  # Global list to store previous chart results
 
 
-def run_job_in_background(job_id, sim_kwargs):
-    try:
-        save_job(job_id, {"status": "running"})
-        kwargs = {k: v for k, v in sim_kwargs.items() if not k.startswith('_')}
-        img, arl_value, chart_title, extra_stats = run_simulation(**kwargs)
-        save_job(job_id, {
-            "status": "done",
-            "result": {
-                "image": img,
-                "title": chart_title,
-                "arl": round(arl_value, 2),
-                "rl_percentiles": extra_stats.get("rl_percentiles"),
-                "detect_within_threshold_count": extra_stats.get("detections_within_x"),
-                "detect_within_threshold_percent": extra_stats.get("percent_within_x"),
-                "late_threshold": extra_stats.get("x_days")
-            },
-            "full_params": sim_kwargs.get("_full_params")
-        })
-    except Exception as e:
-        save_job(job_id, {"status": "error", "message": str(e)})
+# ---------------------------
+# Simulation Functions (including optimize_lambda)
+# ---------------------------
 
 
-@app.route("/poll/<job_id>")
-def poll(job_id):
-    global previous_results
-    job = load_job(job_id)
-    if job is None:
-        return jsonify({"status": "error", "message": "Job not found"})
-    if job["status"] == "running":
-        return jsonify({"status": "running"})
-    if job["status"] == "error":
-        return jsonify({"status": "error", "message": job.get("message", "Unknown error")})
-    if job["status"] == "done":
-        result = job["result"]
-        previous_results.append(result)
-        delete_job(job_id)
-        return jsonify({"status": "done"})
 
-# ─────────────────────────────────────────────
-# All your existing simulation functions below
-# (unchanged — paste yours in here)
-# ─────────────────────────────────────────────
 
 def generate_behavior_data_sim(behavior, params, n_baseline):
     x = np.arange(n_baseline)
@@ -115,7 +62,7 @@ def generate_behavior_data_sim(behavior, params, n_baseline):
 def calculate_limits_sim(data, sigma_multiplier, analysis_method="shewhart", lambda_val=0.3):
     mean = np.mean(data)
     if analysis_method == "mc-ewma":
-        result = mc_ewma(data, mean, 1, sigma_multiplier, lambda_val, baseline_period=0)
+        result = mc_ewma(data, mean, 1, sigma_multiplier, lambda_val, baseline_period=0)  
         mc_series = result['series']
         residuals = np.array(data) - mc_series
         MR = np.abs(np.diff(residuals))
@@ -127,7 +74,7 @@ def calculate_limits_sim(data, sigma_multiplier, analysis_method="shewhart", lam
            (mean - (sigma_multiplier - 1) * sigma, mean + (sigma_multiplier - 1) * sigma), mean, sigma
 
 
-def apply_change_sim(data, change, change_day, params, original_behavior, baseline_mean, sigma, analysis_method, sigma_multiplier, baseline_period, lambda_val, max_days, alpha_val):  
+def apply_change_sim(data, change, change_day, params, original_behavior, baseline_mean, sigma, analysis_method, sigma_multiplier, baseline_period, lambda_val, max_days, alpha_val, k_val=None, h_val=None):  
     print("Analysis method:", analysis_method)
     noise_val = params.get('noise', 1.0)
     std = params.get('std', None)
@@ -153,6 +100,7 @@ def apply_change_sim(data, change, change_day, params, original_behavior, baseli
     out_of_control_index = None
     check_freq = 25
     ewma_current = baseline_mean
+
 
     while len(data) < max_days:
         idx = len(data)
@@ -217,34 +165,42 @@ def apply_change_sim(data, change, change_day, params, original_behavior, baseli
                 result = shewhart(data, baseline_mean, sigma, sigma_multiplier, baseline_period)
                 out_of_control_index = result["out_of_control_index"]
 
+
             elif analysis_method == 'ewma':
                 result = ewma(data, baseline_mean, sigma, sigma_multiplier, lambda_val, baseline_period)
                 out_of_control_index = result["out_of_control_index"]
+
 
             elif analysis_method == 'mc-ewma':
                 result = mc_ewma(data, baseline_mean, sigma, sigma_multiplier, lambda_val, baseline_period)
                 out_of_control_index = result["out_of_control_index"]
 
+
             elif analysis_method == 'cusum':
-                result = cusum(data, baseline_mean, sigma, sigma_multiplier, baseline_period)
+                result = cusum(data, baseline_mean, sigma, sigma_multiplier, baseline_period, k_val=k_val, h_val=h_val)
                 out_of_control_index = result["out_of_control_index"]
+
 
             elif analysis_method == 'farrington':
                 data_farr = np.clip(np.round(data), 0, None)
                 result = farrington(data_farr, baseline_period, alpha=alpha_val)
                 out_of_control_index = result["out_of_control_index"]
 
+
             elif analysis_method == 'glm':
                 result = glm(data, baseline_period, alpha=alpha_val)
                 out_of_control_index = result["out_of_control_index"]
 
+
             if out_of_control_index is not None:
                 data = data[:out_of_control_index + 1]
                 break
+    print("Length of data:", len(data))
+    print("out-of-control index:", out_of_control_index)
     return data, out_of_control_index
 
 
-def analyze_data_sim(data, control_limits, warning_limits, baseline_mean, sigma, out_of_control_index, change_day, analysis_method, sigma_multiplier, baseline_period, lambda_val):
+def analyze_data_sim(data, control_limits, warning_limits, baseline_mean, sigma, out_of_control_index, change_day, analysis_method, sigma_multiplier, baseline_period, lambda_val, k_val=None, h_val=None):
     plt.figure(figsize=(10, 5))
     if change_day is not None:
         plt.axvline(change_day, color="purple", linestyle="dotted", label="Change Day", zorder=2)
@@ -276,15 +232,17 @@ def analyze_data_sim(data, control_limits, warning_limits, baseline_mean, sigma,
         plt.title(f"MC-EWMA Chart (λ = {formatted_lambda}, {sigma_multiplier}σ)")
         marker_value = data[out_of_control_index] if out_of_control_index is not None else None
     elif analysis_method == "cusum":
-        result = cusum(data, baseline_mean, sigma, sigma_multiplier, baseline_period)
+        result = cusum(data, baseline_mean, sigma, sigma_multiplier, baseline_period, k_val=k_val, h_val=h_val)
         c_plus, c_minus = result["series"]
         plt.plot(c_plus, color="blue", label="CUSUM+", zorder=2)
         plt.plot(c_minus, color="orange", label="CUSUM-", zorder=2)
         plt.axhline(result["ucl"], color="red", linestyle="dashed", label="+h")
         plt.axhline(result["lcl"], color="red", linestyle="dashed", label="-h")
-        plt.title(f"CUSUM Chart (k=0.5σ, h={sigma_multiplier}σ)")
+        k_display = k_val if k_val is not None else 0.5 * sigma
+        h_display = h_val if h_val is not None else sigma_multiplier * sigma
+        plt.title(f"CUSUM Chart (k={k_display:.3f}, h={h_display:.3f})")
         if out_of_control_index is not None:
-            marker_value = c_plus[out_of_control_index] if c_plus[out_of_control_index] > abs(c_minus[out_of_control_index]) else c_minus[out_of_control_index]
+          marker_value = c_plus[out_of_control_index] if c_plus[out_of_control_index] > abs(c_minus[out_of_control_index]) else c_minus[out_of_control_index]
     elif analysis_method == "farrington":
         result = farrington(data, baseline_period, alpha=0.05)
         plt.plot(result["series"], color="blue", label="Farrington", zorder=2)
@@ -310,22 +268,34 @@ def analyze_data_sim(data, control_limits, warning_limits, baseline_mean, sigma,
     plt.tight_layout()
 
 
+
+
 def plot_replicates_and_histogram(replications, run_lengths, change_day, analysis_method, sigma_multiplier, baseline_period, n_replications,
                                   arl_value, metric_label, avg_sigma, avg_change_day, limit_stopped_percentage, lambda_val,
-                                  ucl_ci, lcl_ci, late_threshold, arl_moe, alpha_val):
-    fig = plt.figure(figsize=(14, 8))
-    gs = fig.add_gridspec(nrows=2, ncols=3, width_ratios=[0.8, 1, 3])
+                                  ucl_ci, lcl_ci, late_threshold, arl_moe, alpha_val, k_val=None, h_val=None):
+    
+    fig = plt.figure(figsize=(16, 5.5)) 
+    fig.patch.set_facecolor('#f8fafc') 
+    gs = fig.add_gridspec(nrows=2, ncols=3, width_ratios=[0.8, 1.8, 2.5]) 
+    print("Analysis method:", analysis_method)
+    # Legend in Column 0
     legend_ax = fig.add_subplot(gs[:, 0])
     legend_ax.axis("off")
 
+
     run_arr = np.array(run_lengths)
+
+
+    # Percentiles of run length
     rl_percentiles = np.percentile(run_arr, [10, 25, 50, 75, 90])
     p10, p25, p50, p75, p90 = rl_percentiles
 
+
+    # Detection within X days
     x = float(late_threshold) if late_threshold is not None else None
     detections_within_x = np.sum(run_arr <= x) if x is not None else 0
     percent_within_x = 100 * detections_within_x / len(run_arr) if x is not None and len(run_arr) else 0
-
+    
     if analysis_method == "shewhart":
         handles = [
             Line2D([0], [0], color="blue", lw=2, label="Simulated Data"),
@@ -357,39 +327,46 @@ def plot_replicates_and_histogram(replications, run_lengths, change_day, analysi
         ]
     elif analysis_method == "cusum":
         handles = [
-            Line2D([0], [0], color="blue", lw=2, label="Simulated Data"),
-            Line2D([0], [0], color="orange", lw=2, label="CUSUM-"),
-            Line2D([0], [0], color="green", lw=2, label="CUSUM+"),
-            Line2D([0], [0], color="red", lw=2, linestyle="dashed", label="+h / -h"),
-            Line2D([0], [0], marker="o", color="w", markerfacecolor="red", markersize=10, label="Out-of-Control"),
-            Line2D([0], [0], color="black", lw=2, linestyle="dashed", label=f"RL Threshold ({late_threshold:.0f} days)")
+        Line2D([0], [0], color="blue", lw=2, label="Simulated Data"),
+        Line2D([0], [0], color="orange", lw=2, label="CUSUM-"),
+        Line2D([0], [0], color="green", lw=2, label="CUSUM+"),
+        Line2D([0], [0], color="red", lw=2, linestyle="dashed", label="+h / -h"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="red", markersize=10, label="Out-of-Control"),
+        Line2D([0], [0], color="black", lw=2, linestyle="dashed", label=f"RL Threshold ({late_threshold:.0f} days)")
         ]
     elif analysis_method == "farrington":
         handles = [
-            Line2D([0], [0], color="blue", lw=2, label="Simulated Data"),
-            Line2D([0], [0], color="orange", lw=2, label="Upper Farrington CL"),
-            Line2D([0], [0], color="green", lw=2, label="Lower Farrington LL"),
-            Line2D([0], [0], marker="o", color="w", markerfacecolor="red", markersize=10, label="Out-of-Control"),
-            Line2D([0], [0], color="black", lw=2, linestyle="dashed", label=f"RL Threshold ({late_threshold:.0f} days)")
+        Line2D([0], [0], color="blue", lw=2, label="Simulated Data"),
+        Line2D([0], [0], color="orange", lw=2, label="Upper Farrington CL"),
+        Line2D([0], [0], color="green", lw=2, label="Lower Farrington LL"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="red", markersize=10, label="Out-of-Control"),
+        Line2D([0], [0], color="black", lw=2, linestyle="dashed", label=f"RL Threshold ({late_threshold:.0f} days)")
         ]
     elif analysis_method == "glm":
         handles = [
-            Line2D([0], [0], color="blue", lw=2, label="Simulated Data"),
-            Line2D([0], [0], color="orange", lw=2, label="Upper GLM CL"),
-            Line2D([0], [0], color="green", lw=2, label="Lower GLM LL"),
-            Line2D([0], [0], marker="o", color="w", markerfacecolor="red", markersize=10, label="Out-of-Control"),
-            Line2D([0], [0], color="black", lw=2, linestyle="dashed", label=f"RL Threshold ({late_threshold:.0f} days)")
+        Line2D([0], [0], color="blue", lw=2, label="Simulated Data"),
+        Line2D([0], [0], color="orange", lw=2, label="Upper GLM CL"),
+        Line2D([0], [0], color="green", lw=2, label="Lower GLM LL"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="red", markersize=10, label="Out-of-Control"),
+        Line2D([0], [0], color="black", lw=2, linestyle="dashed", label=f"RL Threshold ({late_threshold:.0f} days)")
         ]
     else:
         handles = []
     legend_ax.legend(handles=handles, loc="center")
-
+    
+    # Replication plots in Column 1
     rep_positions = [(0, 1), (1, 1)]
     for idx, pos in enumerate(rep_positions):
         if idx < len(replications):
             ax = fig.add_subplot(gs[pos[0], pos[1]])
+            ax.set_facecolor('#ffffff')
+            ax.grid(color='#f1f5f9', linestyle='-', linewidth=1, zorder=0)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
             data, out_idx, _, _, baseline_mean, sigma = replications[idx]
-            ax.plot(data, color="blue", zorder=1)
+            ax.plot(data, color="#3b82f6", zorder=1) # Tailwind blue
+
+
             if change_day is not None:
                 ax.axvline(change_day, color="purple", linestyle="dotted", zorder=2)
             rl = (replications[idx][1] - baseline_period + 1) if replications[idx][1] is not None else "∞"
@@ -412,12 +389,14 @@ def plot_replicates_and_histogram(replications, run_lengths, change_day, analysi
                 ax.plot(result["ucl"], color="red", linestyle="dashed", zorder=2)
                 ax.plot(result["lcl"], color="red", linestyle="dashed", zorder=2)
             elif analysis_method == "cusum":
-                result = cusum(data, baseline_mean, sigma, sigma_multiplier, baseline_period)
+                result = cusum(data, baseline_mean, sigma, sigma_multiplier, baseline_period, k_val=k_val, h_val=h_val)
                 c_plus, c_minus = result["series"]
+                marker_value = c_plus[out_idx] if c_plus[out_idx] > abs(c_minus[out_idx]) else c_minus[out_idx]
                 ax.plot(c_plus, color="green", lw=2, label="CUSUM+")
                 ax.plot(c_minus, color="orange", lw=2, label="CUSUM-")
                 ax.axhline(result["ucl"], color="red", linestyle="dashed")
                 ax.axhline(result["lcl"], color="red", linestyle="dashed")
+                # Out-of-control marker
                 if out_idx is not None:
                     marker_value = c_plus[out_idx] if c_plus[out_idx] > abs(c_minus[out_idx]) else c_minus[out_idx]
                     ax.scatter(out_idx, marker_value, color="red", s=100, zorder=3)
@@ -427,107 +406,92 @@ def plot_replicates_and_histogram(replications, run_lengths, change_day, analysi
                 ax.plot(result["ucl"], color="red", linestyle="dashed", zorder=2)
                 ax.plot(result["lcl"], color="red", linestyle="dashed", zorder=2)
                 if result["out_of_control_index"] is not None:
-                    marker_value = result["series"][result["out_of_control_index"]]
-                    ax.scatter(result["out_of_control_index"], marker_value, color="red", s=100, zorder=3)
+                  marker_value = result["series"][result["out_of_control_index"]]
+                  ax.scatter(result["out_of_control_index"], marker_value, color="red", s=100, zorder=3)
             elif analysis_method == "glm":
                 result = glm(data, baseline_period, alpha=alpha_val)
                 ax.plot(result["series"], color="green", zorder=2)
                 ax.plot(result["ucl"], color="red", linestyle="dashed", zorder=2)
                 ax.plot(result["lcl"], color="red", linestyle="dashed", zorder=2)
                 if result["out_of_control_index"] is not None:
-                    marker_value = result["series"][result["out_of_control_index"]]
-                    ax.scatter(result["out_of_control_index"], marker_value, color="red", s=100, zorder=3)
-
+                  marker_value = result["series"][result["out_of_control_index"]]
+                  ax.scatter(result["out_of_control_index"], marker_value, color="red", s=100, zorder=3)
+            
             if analysis_method in ["shewhart", "ewma", "mc-ewma"]:
-                if out_idx is not None:
-                    marker = result["series"][out_idx] if analysis_method == "ewma" else data[out_idx]
-                    ax.scatter(out_idx, marker, color="red", s=100, zorder=3)
-
-    outer_ax = fig.add_subplot(gs[:, 2])
-    outer_ax.axis("off")
-    inner_gs = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[:, 2], width_ratios=[4, 1])
-    hist_ax = fig.add_subplot(inner_gs[0])
-    text_ax = fig.add_subplot(inner_gs[1])
-    if x is not None:
-        hist_ax.axvline(x, color="black", linestyle="--", linewidth=2)
-
+              if out_idx is not None:
+                marker = result["series"][out_idx] if analysis_method=="ewma" else data[out_idx]
+                ax.scatter(out_idx, marker, color="red", s=100, zorder=3)
+    
+    # Histogram and Text Box 
+    hist_ax = fig.add_subplot(gs[:, 2])
+    hist_ax.set_facecolor('#ffffff')
+    hist_ax.grid(axis='y', color='#f1f5f9', linestyle='-', linewidth=1, zorder=0)
+    hist_ax.spines['top'].set_visible(False)
+    hist_ax.spines['right'].set_visible(False)
+    
     unique_vals = np.unique(run_arr)
     if len(unique_vals) <= 10:
         bins = np.concatenate(([unique_vals[0]-0.5], unique_vals+0.5))
     else:
         bins = int(np.ceil(np.sqrt(n_replications)))
-    hist_ax.hist(run_arr, bins=bins, edgecolor="black")
-    hist_ax.set_title("Histogram of Run Lengths")
-    hist_ax.set_xlabel("Run Length")
-    hist_ax.set_ylabel("Frequency")
+        
+    hist_ax.hist(run_arr, bins=bins, color='#3b82f6', edgecolor="white", alpha=0.85, zorder=2)
+    hist_ax.set_title("Distribution of Run Lengths", fontsize=13, fontweight='bold', color='#1e293b')
+    hist_ax.set_xlabel("Run Length (Days)", fontsize=11, fontweight='bold', color='#475569')
+    hist_ax.set_ylabel("Frequency", fontsize=11, fontweight='bold', color='#475569')
+    
     if x is not None:
-        hist_ax.axvline(x, color="black", linestyle="--", linewidth=2)
+        hist_ax.axvline(x, color="#ef4444", linestyle="--", linewidth=2.5, label=f"Threshold ({x:.0f} days)", zorder=3)
+        hist_ax.legend(loc="upper right")
 
-    stats = (f"Replications: {n_replications}\n"
-             f"ARL: {arl_value:.2f} ± {arl_moe:.2f}\n"
-             f"UCL 95% CI: [{ucl_ci[0]:.1f}, {ucl_ci[1]:.1f}]\n"
-             f"LCL 95% CI: [{lcl_ci[0]:.1f}, {lcl_ci[1]:.1f}]\n"
-             f"Min: {run_arr.min():.0f}\n"
-             f"Median: {np.median(run_arr):.0f} \n"
-             f"Max: {run_arr.max():.0f}\n")
-    if metric_label == "FAR":
-        stats += f"FAR: {1/arl_value:.4f}\n"
-    stats += (f"Avg Sigma: {avg_sigma:.2f}\n"
-              f"Change Day: {int(avg_change_day) if avg_change_day is not None else 'N/A'}\n"
-              f"Stopped at 10000: {limit_stopped_percentage:.2f}%")
-    stats += (f"\n\nRL Percentiles:\n"
-              f"P10: {p10:.1f}\n"
-              f"P25: {p25:.1f}\n"
-              f"P50: {p50:.1f}\n"
-              f"P75: {p75:.1f}\n"
-              f"P90: {p90:.1f}\n")
-    if x is not None and len(run_arr) > 0:
-        stats += (f"\nDetect ≤ {x:.0f} days:\n"
-                  f"{detections_within_x} ({percent_within_x:.1f}%)")
 
-    text_ax.text(0.05, 0.95, stats, transform=text_ax.transAxes, verticalalignment="top",
-                 fontsize=14, bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5))
-    text_ax.axis("off")
     plt.tight_layout()
     return {
-        "rl_percentiles": {"P10": float(p10), "P25": float(p25), "P50": float(p50), "P75": float(p75), "P90": float(p90)},
+        "rl_percentiles": {
+            "P10": float(p10),
+            "P25": float(p25),
+            "P50": float(p50),
+            "P75": float(p75),
+            "P90": float(p90),
+        },
         "detections_within_x": int(detections_within_x),
         "percent_within_x": float(percent_within_x),
-        "x_days": float(x) if x is not None else None
+        "x_days": float(x) if x is not None else None,
+        "arl_moe": float(arl_moe),
+        "ucl_ci": [float(ucl_ci[0]), float(ucl_ci[1])],
+        "lcl_ci": [float(lcl_ci[0]), float(lcl_ci[1])],
+        "limit_pct": float(limit_stopped_percentage)
     }
+    
 
 
-def optimize_lambda(data, method="ewma"):
-    def objective(lam):
-        if lam <= 0 or lam > 1: return 1e6
-        ewma_series = np.zeros_like(data)
-        ewma_series[0] = data[0]
-        for i in range(1, len(data)):
-            ewma_series[i] = lam * data[i-1] + (1 - lam) * ewma_series[i-1]
-        mse = np.mean((data - ewma_series)**2)
-        return mse
-    res = minimize_scalar(objective, bounds=(0.01, 1.0), method='bounded')
-    return res.x, res.fun
-
-
-def run_simulation(behavior, params, n_baseline, change, change_day, analysis_method, n_replications, sigma_multiplier, max_days, lambda_val, late_threshold, alpha_val, custom_data=None):
+def run_simulation(behavior, params, n_baseline, change, change_day, analysis_method, n_replications, sigma_multiplier, max_days, lambda_val, late_threshold, alpha_val, custom_data=None, k_val=None, h_val=None):
     run_lengths = []
     replications = []
     sigmas = []
     change_days = []
-    iterations = n_replications
 
+
+    # Ensure iterations is always n_replications
+    iterations = n_replications
+    
     if custom_data is not None:
+        # Use the provided data for the first run, then generate synthetic ones for the rest
         current_data = list(custom_data)
         baseline_period = n_baseline
     else:
         baseline_period = change_day if (change and change_day is not None) else n_baseline
 
+
     for _ in range(iterations):
+        # 1. Get Data
         if custom_data is not None:
             data = current_data
+            # Recalculate limits based on the custom data's baseline portion
             baseline_subset = data[:baseline_period]
+            # We need a temporary calculation for limits
             _, _, baseline_mean, sigma = calculate_limits_sim(baseline_subset, sigma_multiplier, analysis_method, lambda_val)
+            
             out_idx = None
             if analysis_method == 'shewhart':
                 res = shewhart(data, baseline_mean, sigma, sigma_multiplier, baseline_period)
@@ -539,62 +503,82 @@ def run_simulation(behavior, params, n_baseline, change, change_day, analysis_me
                 res = mc_ewma(data, baseline_mean, sigma, sigma_multiplier, lambda_val, baseline_period)
                 out_idx = res["out_of_control_index"]
             elif analysis_method == 'cusum':
-                res = cusum(data, baseline_mean, sigma, sigma_multiplier, baseline_period)
+                res = cusum(data, baseline_mean, sigma, sigma_multiplier, baseline_period, k_val=k_val, h_val=h_val)
                 out_idx = res["out_of_control_index"]
             elif analysis_method == 'farrington':
-                data_farr = np.clip(np.round(data), 0, None)
-                result = farrington(data_farr, baseline_period, alpha=alpha_val)
-                out_idx = result["out_of_control_index"]
+              data_farr = np.clip(np.round(data), 0, None)
+              result = farrington(data_farr, baseline_period, alpha=alpha_val)
+              out_of_control_index = result["out_of_control_index"]
             elif analysis_method == 'glm':
-                result = glm(data, baseline_period, alpha=alpha_val)
-                out_idx = result["out_of_control_index"]
+              result = glm(data, baseline_period, alpha=alpha_val)
+              out_of_control_index = result["out_of_control_index"]
+            
         else:
+            # Generate NEW Synthetic Data
             data = generate_behavior_data_sim(behavior, params, n_baseline)
             _, _, baseline_mean, sigma = calculate_limits_sim(data, sigma_multiplier, analysis_method, lambda_val)
-            data, out_idx = apply_change_sim(data, change, change_day, params, behavior, baseline_mean, sigma,
-                                             analysis_method, sigma_multiplier, baseline_period, lambda_val, max_days, alpha_val)
+            data, out_idx = apply_change_sim(data, change, change_day, params, behavior, baseline_mean, sigma, 
+                                             analysis_method, sigma_multiplier, baseline_period, lambda_val, max_days, alpha_val,k_val=k_val, h_val=h_val)
+
 
         sigmas.append(sigma)
+        
         if out_idx is not None:
             run_length = (out_idx - baseline_period) + 1
         else:
-            run_length = (len(data) - baseline_period) + 1
+            run_length = (len(data) - baseline_period) + 1 # Use actual data len
+            
         run_lengths.append(run_length)
         replications.append((data, out_idx, None, None, baseline_mean, sigma))
         if change_day is not None:
             change_days.append(change_day)
 
+
     arl_value = np.mean(run_lengths) if run_lengths else float('inf')
-    arl_moe = 0.0  # default in case n_replications == 1
+    
+    # 1. Calculate ARL 95% CI
     if len(run_lengths) > 1:
         arl_std = np.std(run_lengths, ddof=1)
         arl_moe = 1.96 * (arl_std / np.sqrt(iterations))
-
+ 
+        
+    # 2. Calculate Control Limit 95% CIs (Empirical Percentiles)
+    # replications[i] contains: (data, out_idx, None, None, baseline_mean, sigma)
     ucl_list = [rep[4] + sigma_multiplier * rep[5] for rep in replications]
     lcl_list = [rep[4] - sigma_multiplier * rep[5] for rep in replications]
+    
     ucl_ci = (np.percentile(ucl_list, 2.5), np.percentile(ucl_list, 97.5)) if ucl_list else (0, 0)
     lcl_ci = (np.percentile(lcl_list, 2.5), np.percentile(lcl_list, 97.5)) if lcl_list else (0, 0)
+
 
     avg_sigma = np.mean(sigmas) if sigmas else 0
     avg_change_day = np.mean(change_days) if change_days else None
     limit_pct = (sum(1 for r in replications if r[1] is None) / iterations) * 100
     metric_label = "FAR" if change is None else "ARL"
 
+
     formatted_lambda = format(lambda_val, '.3f').rstrip('0').rstrip('.')
+
+
     if analysis_method == "shewhart":
         chart_title = f"Shewhart Chart ({sigma_multiplier}σ)"
     elif analysis_method == "ewma":
         chart_title = f"EWMA Chart (λ = {formatted_lambda}, {sigma_multiplier}σ)"
     elif analysis_method == "mc-ewma":
         chart_title = f"MC-EWMA Chart (λ = {formatted_lambda}, {sigma_multiplier}σ)"
+    elif analysis_method == "cusum":
+        k_display = k_val if k_val is not None else 0.5 * avg_sigma
+        h_display = h_val if h_val is not None else sigma_multiplier * avg_sigma
+        chart_title = f"CUSUM Chart (k={k_display:.3f}, h={h_display:.3f})" 
     else:
         chart_title = analysis_method.upper()
 
+
     buf = io.BytesIO()
-    extra_stats = plot_replicates_and_histogram(
-        replications, run_lengths, change_day, analysis_method, sigma_multiplier,
-        baseline_period, iterations, arl_value, metric_label, avg_sigma, avg_change_day,
-        limit_pct, lambda_val, ucl_ci, lcl_ci, late_threshold, arl_moe, alpha_val)
+    extra_stats = plot_replicates_and_histogram(replications, run_lengths, change_day, analysis_method, sigma_multiplier,
+                                  baseline_period, iterations,
+                                  arl_value, metric_label, avg_sigma, avg_change_day, limit_pct, lambda_val,
+                                  ucl_ci, lcl_ci, late_threshold, arl_moe, alpha_val,k_val=k_val, h_val=h_val) 
     plt.savefig(buf, format="png", dpi=80)
     buf.seek(0)
     img_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -602,28 +586,22 @@ def run_simulation(behavior, params, n_baseline, change, change_day, analysis_me
     return img_base64, arl_value, chart_title, extra_stats
 
 
-# ─────────────────────────────────────────────
-# Routes
-# ─────────────────────────────────────────────
-
-previous_results = []  # kept for in-process use; see note in /poll
-
-nav_bar = ""  # unused but kept for compatibility
-
-
 @app.route("/", methods=["GET", "POST"])
 def index():
     global previous_results
     if request.method == "POST":
+        # Handle Clear Results button
         if request.form.get("clear"):
             previous_results.clear()
             session.pop('full_params', None)
             return redirect(url_for('index'))
 
+
         fd = request.form.to_dict()
         data_source = fd.get("data_source")
-        custom_data = None
-
+        custom_data = None  # Ensure this starts as None
+        
+        # 1. Parse Common Generation Settings
         try:
             n_baseline = int(fd.get("n_baseline", "50"))
             n_replications = int(fd.get("n_replications", "100"))
@@ -633,6 +611,8 @@ def index():
             n_baseline, n_replications, sigma_multiplier = 50, 100, 3.0
             late_threshold = 120
 
+
+        # 2. Logic Split: Define Behavior and Params
         if data_source == "upload":
             file = request.files.get('csv_file')
             if not file or file.filename == '':
@@ -640,16 +620,26 @@ def index():
             try:
                 df = pd.read_csv(file)
                 raw_values = pd.to_numeric(df.iloc[:, 0], errors='coerce').dropna().values
-                if len(raw_values) < 10:
+                if len(raw_values) < 10: 
                     raise ValueError("Dataset too small (<10 points).")
+                
+                # Calculate stats to use as a template
                 mu = np.mean(raw_values)
                 sigma = np.std(raw_values)
-                behavior = "stable"
+                
+                behavior = "stable" 
                 params = {"mean": mu, "std": sigma, "distribution_type": fd.get("dist_type", "normal")}
-                custom_data = None
+                
+                # CRITICAL: We set custom_data to None so the tool generates 100 NEW replications 
+                # based on your file's stats instead of just plotting the static file once.
+                custom_data = None 
+
+
             except Exception as e:
                 return render_template("home.html", error=f"Invalid File: {str(e)}", results=previous_results)
+        
         else:
+            # Manual Simulation Branch
             behavior = fd.get("behavior")
             params = {}
             if behavior == "stable":
@@ -666,6 +656,8 @@ def index():
                 params['period'] = float(fd.get("period", "50"))
                 params['noise'] = float(fd.get("p_noise", "5"))
 
+
+        # 3. Handle Induce Change (Applies to both sources)
         induce = fd.get("induce_change", "no").lower() == "yes"
         if induce:
             change_day = int(fd.get("change_day", "50"))
@@ -677,110 +669,109 @@ def index():
         else:
             change, change_day = None, None
 
+
+        # 4. Final Parameter Cleanup and Execution
         analysis_method = fd.get("analysis_method")
         max_days = 10000
         lambda_val = float(fd.get("lambda_val", "0.3")) if fd.get("lambda_val") else 0.3
         alpha_val = float(fd.get("alpha_val", "0.05")) if fd.get("alpha_val") else 0.05
+        k_val = float(fd.get("k_val")) if fd.get("k_val") else None
+        h_val = float(fd.get("h_val")) if fd.get("h_val") else None
 
-        full_params = {
+
+        session['full_params'] = {
             "behavior": behavior, "params": params, "n_baseline": n_baseline,
             "n_replications": n_replications, "sigma_multiplier": sigma_multiplier,
-            "change": change, "change_day": change_day, "max_days": max_days,
-            "late_threshold": late_threshold, "alpha_val": alpha_val
+            "change": change, "change_day": change_day, "max_days": max_days, "late_threshold": late_threshold, "alpha_val": alpha_val, "k_val": k_val,"h_val": h_val
         }
-        session['full_params'] = full_params
+        
+        # 5. RUN THE SIMULATION
+        # This will now always run, regardless of data source.
+        img, arl_value, chart_title, extra_stats = run_simulation(
+            behavior, params, n_baseline, change, change_day,
+            analysis_method, n_replications, sigma_multiplier, 
+            max_days, lambda_val, late_threshold,alpha_val, custom_data=custom_data, k_val=k_val, h_val=h_val
+        )
+        previous_results.append({
+            "image": img, 
+            "title": chart_title, 
+            "arl": round(arl_value, 2), 
+            "extra_stats": extra_stats
+        })
 
-        # Create a background job
-        job_id = str(uuid.uuid4())
 
-        sim_kwargs = {
-            "behavior": behavior, "params": params, "n_baseline": n_baseline,
-            "change": change, "change_day": change_day, "analysis_method": analysis_method,
-            "n_replications": n_replications, "sigma_multiplier": sigma_multiplier,
-            "max_days": max_days, "lambda_val": lambda_val,
-            "late_threshold": late_threshold, "alpha_val": alpha_val,
-            "custom_data": custom_data,
-            "_full_params": full_params  # passed through so poll can store it
-        }
-
-        t = threading.Thread(target=run_job_in_background, args=(job_id, sim_kwargs), daemon=True)
-        t.start()
-
-        # Return the page immediately, passing job_id so the frontend can poll
-        return render_template("home.html", results=previous_results,
-                               full_params_exists=('full_params' in session),
-                               pending_job_id=job_id)
-
-    return render_template("home.html", results=previous_results,
-                           full_params_exists=('full_params' in session))
+    return render_template("home.html", results=previous_results, full_params_exists=('full_params' in session), nav_bar=nav_bar)
 
 
 @app.route("/instructions")
 def instructions():
-    return render_template("instructions.html")
+    return render_template("instructions.html", nav_bar=nav_bar)
 
 
 @app.route("/clear", methods=["POST"])
 def clear():
     global previous_results
     previous_results = []
-    session.pop('full_params', None)
+    session.pop('full_params', None)  
     return redirect(url_for('index'))
 
 
 @app.route("/reanalyze", methods=["GET", "POST"])
 def reanalyze():
-    global previous_results
+    # 1. Check if session has data. If not, return to home with ERROR.
     if 'full_params' not in session or not previous_results:
-        return render_template("home.html",
-                               error="No simulation data found. Please perform an initial run first.",
+        return render_template("home.html", 
+                               error="No simulation data found. Please perform an initial run first.", 
                                results=previous_results)
-
+        
     if request.method == "POST":
         fp = session['full_params']
         late_threshold = fp.get("late_threshold", 120.0)
+
+
         analysis_method = request.form.get("analysis_method")
         lambda_val = 0.3
-
+        
         if analysis_method in ["ewma", "mc-ewma"]:
-            lam_option = request.form.get("lam_option", "manual")
-            if lam_option == "manual":
-                lambda_val = float(request.form.get("lambda_val", 0.3))
-            elif lam_option == "optimized":
-                base_data = generate_behavior_data_sim(fp["behavior"], fp["params"], fp["n_baseline"])
-                lambda_val, _ = optimize_lambda(np.array(base_data), method=analysis_method)
+            lambda_val = float(request.form.get("lambda_val", 0.3))
+
 
         sigma_multiplier = float(request.form.get("sigma_multiplier_re") or fp["sigma_multiplier"])
+        k_val = float(request.form.get("k_val")) if request.form.get("k_val") else fp.get("k_val")
+        h_val = float(request.form.get("h_val")) if request.form.get("h_val") else fp.get("h_val")
 
-        job_id = str(uuid.uuid4())
 
-        sim_kwargs = {
-            "behavior": fp["behavior"], "params": fp["params"], "n_baseline": fp["n_baseline"],
-            "change": fp["change"], "change_day": fp["change_day"],
-            "analysis_method": analysis_method,
-            "n_replications": fp["n_replications"], "sigma_multiplier": sigma_multiplier,
-            "max_days": fp["max_days"], "lambda_val": lambda_val,
-            "late_threshold": late_threshold, "alpha_val": fp.get("alpha_val", 0.05),
-            "custom_data": None,
-            "_full_params": fp
-        }
+        # Re-run simulation using stored parameters
+        img, arl_value, chart_title, extra_stats = run_simulation(
+            fp["behavior"], fp["params"], fp["n_baseline"], 
+            fp["change"], fp["change_day"],
+            analysis_method, fp["n_replications"], sigma_multiplier, 
+            fp["max_days"], lambda_val, late_threshold, fp.get("alpha_val", 0.05), custom_data=None, k_val=k_val, h_val=h_val
+        )
+        previous_results.append({
+            "image": img, 
+            "title": chart_title, 
+            "arl": round(arl_value, 2), 
+            "extra_stats": extra_stats
+        })
+        return redirect(url_for('index'))
 
-        t = threading.Thread(target=run_job_in_background, args=(job_id, sim_kwargs), daemon=True)
-        t.start()
-
-        return render_template("home.html", results=previous_results,
-                               full_params_exists=True,
-                               pending_job_id=job_id)
 
     return render_template("analysis.html")
 
 
 @app.route("/finalize")
 def finalize():
+    # Filter results that actually have an ARL (to avoid errors)
     valid_results = [r for r in previous_results if r.get('arl') is not None]
+    
+    # Sort Lowest ARL first (Fastest detection is better)
     ranked_data = sorted(valid_results, key=lambda x: x['arl'])
+    
+    # Reload home page with the new 'rankings' list
     return render_template("home.html", results=previous_results, rankings=ranked_data)
 
 
 if __name__ == "__main__":
     app.run(debug=True)
+
