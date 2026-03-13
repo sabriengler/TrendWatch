@@ -504,7 +504,7 @@ def index():
 
         try:
             n_baseline = int(fd.get("n_baseline", "50"))
-            n_replications = int(fd.get("n_replications", "100"))
+            n_replications = min(int(fd.get("n_replications", "25")), 100)
             sigma_multiplier = float(fd.get("sigma_multiplier", "3.0"))
             late_threshold = float(fd.get("late_threshold", 120))
         except ValueError:
