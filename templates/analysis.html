@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SPC Tool | Reanalyze</title>
+    <title>TrendWatch | Reanalyze</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -12,23 +12,23 @@
         function updateReanalyze() {
             let method = document.getElementById("analysis_method").value;
             let ewmaOpts = document.getElementById("ewma_options");
-            if (method === "ewma" || method === "mc-ewma") {
-                ewmaOpts.classList.remove("hidden");
-            } else {
-                ewmaOpts.classList.add("hidden");
-            }
+            let alphaOpts = document.getElementById("alpha_options");
+            let cusumOpts = document.getElementById("cusum_options");
+
+            ewmaOpts.classList.toggle("hidden", method !== "ewma" && method !== "mc-ewma");
+            cusumOpts.classList.toggle("hidden", method !== "cusum");
+            alphaOpts.classList.toggle("hidden", method !== "farrington" && method !== "glm");
         }
     </script>
 </head>
 <body class="bg-slate-50 text-slate-800">
-
 
     <nav class="bg-white shadow-sm sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16">
                 <div class="flex">
                     <div class="flex-shrink-0 flex items-center">
-                        <span class="font-bold text-xl text-blue-600"><i class="fas fa-chart-line mr-2"></i>SPC Tool</span>
+                        <span class="font-bold text-xl text-blue-600">TrendWatch</span>
                     </div>
                     <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
                         <a href="/" class="border-transparent text-gray-500 hover:border-blue-300 hover:text-blue-600 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition">Home</a>
@@ -40,7 +40,6 @@
         </div>
     </nav>
 
-
     <div class="bg-gradient-to-r from-blue-700 to-cyan-600 pb-24 pt-12 border-b border-blue-800">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
             <h1 class="text-3xl font-extrabold text-white sm:text-4xl drop-shadow-sm">Reanalyze Data</h1>
@@ -48,11 +47,10 @@
         </div>
     </div>
 
-
     <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 -mt-16 pb-12">
         <div class="bg-white shadow-xl rounded-xl border-t-4 border-blue-500 p-8">
             <form class="space-y-6" method="POST" action="/reanalyze">
-                
+
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">New Analysis Method</label>
                     <select name="analysis_method" id="analysis_method" onchange="updateReanalyze()" class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border">
@@ -65,24 +63,42 @@
                     </select>
                 </div>
 
-
                 <div id="ewma_options" class="hidden mt-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
-                             <label class="text-sm font-bold text-gray-800">λ (Lambda Value)</label>
-                             <input type="number" step="0.01" name="lambda_val" value="0.2" class="w-full mt-2 p-2 border rounded-md text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
-                             <p class="mt-2 text-xs text-gray-500 italic">Standard range: 0.2 to 0.3</p>
-                        </div>
-                            <label class="block text-sm font-medium text-gray-700">Lambda Value</label>
-                            <input type="number" step="0.01" name="lambda_val" value="0.3" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 sm:text-sm rounded-md border">
-                        </div>
-                    </div>
+                    <label class="text-sm font-bold text-gray-800">λ (Lambda Value)</label>
+                    <input type="number" step="0.01" name="lambda_val" value="0.2" class="w-full mt-2 p-2 border rounded-md text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
+                    <p class="mt-2 text-xs text-gray-500 italic">Standard range: 0.2 to 0.3</p>
                 </div>
 
+                <div id="alpha_options" class="hidden mt-4 p-4 bg-indigo-50 border border-indigo-100 rounded-lg">
+                    <label class="text-sm font-bold text-gray-800">Alpha (α) Value</label>
+                    <input type="number" step="0.01" name="alpha_val" value="0.05" min="0.001" max="0.5" class="w-full mt-2 p-2 border rounded-md text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
+                    <p class="mt-2 text-xs text-gray-500 italic">Standard range: 0.01 to 0.05</p>
+                </div>
+
+                <div id="cusum_options" class="hidden mt-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                    <label class="text-sm font-bold text-gray-800">Reference Value (k)</label>
+                    <input type="number" step="0.01" name="k_val" placeholder="e.g. 0.5" class="w-full mt-2 p-2 border rounded-md text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
+                    <p class="mt-1 text-xs text-gray-500 italic">Standard: 0.5</p>
+                    <label class="text-sm font-bold text-gray-800 mt-3 block">Decision Limit (h)</label>
+                    <input type="number" step="0.01" name="h_val" placeholder="e.g. 5" class="w-full mt-2 p-2 border rounded-md text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
+                    <p class="mt-1 text-xs text-gray-500 italic">Standard range: 4 to 5</p>
+                </div>
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Sigma Multiplier</label>
                     <input type="number" step="0.1" name="sigma_multiplier_re" placeholder="Leave blank to keep current" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border">
                 </div>
 
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Replications</label>
+                    <input type="number" step="1" name="n_replications_re" placeholder="Leave blank to keep current" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border">
+                    <p class="mt-1 text-xs text-gray-400">Max 100. Lower = faster results.</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Baseline Duration</label>
+                    <input type="number" step="1" name="n_baseline_re" placeholder="Leave blank to keep current" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border">
+                </div>
 
                 <div class="pt-4">
                     <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition transform hover:scale-[1.02]">
@@ -95,4 +111,3 @@
     <script>updateReanalyze();</script>
 </body>
 </html>
-
