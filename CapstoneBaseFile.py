@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, redirect, url_for, session 
 print ("Flask imported")
 from statsmethods import shewhart, ewma, mc_ewma, cusum, farrington, glm
