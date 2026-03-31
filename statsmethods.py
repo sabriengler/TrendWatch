@@ -1,6 +1,3 @@
-statsmethods
-py
-4 of 5
 import numpy as np
 from scipy.stats import norm, poisson, nbinom
 ﻿
