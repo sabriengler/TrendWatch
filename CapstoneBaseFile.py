@@ -38,8 +38,7 @@ nav_bar = """
 previous_results = []  # Global list to store previous chart results﻿
 def generate_behavior_data_sim(behavior, params, n_baseline):
     x = np.arange(n_baseline)
-    data_type = params.get('data_type', 'continuous')
-﻿
+    data_type = params.get('data_type', 'continuous')﻿
     if behavior == 'stable':
         if data_type == 'continuous':
             data = np.random.normal(loc=params['mean'], scale=params['std'], size=n_baseline)
