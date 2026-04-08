@@ -741,9 +741,12 @@ def calculate_oc_arl(method, factor, params, behavior, n_baseline, n_replication
     actual_max = max_days
 
 
+    actual_reps = min(n_replications, 150)  # hard cap for ALL methods
+    actual_max = min(max_days, n_baseline + 500)
+
     if method in ['glm', 'farrington']:
-        actual_reps = min(n_replications, 30)  # Cap replications to 30
-        actual_max = min(max_days, n_baseline + 150) # Cap search limit
+        actual_reps = min(n_replications, 30)
+        actual_max = min(max_days, n_baseline + 150)
 
 
     for _ in range(actual_reps):
