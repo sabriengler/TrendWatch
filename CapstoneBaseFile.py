@@ -497,7 +497,9 @@ def plot_replicates_and_histogram(replications, run_lengths, change_day, analysi
             elif analysis_method == "cusum":
                 result = cusum(data, baseline_mean, sigma, sigma_multiplier, baseline_period, k_val=k_val, h_val=h_val)
                 c_plus, c_minus = result["series"]
-                marker_value = c_plus[out_idx] if c_plus[out_idx] > abs(c_minus[out_idx]) else c_minus[out_idx]
+                cp_val = float(c_plus[out_idx])
+                cm_val = float(c_minus[out_idx])
+                marker_value = cp_val if cp_val > abs(cm_val) else cm_val
                 ax.plot(c_plus, color="green", lw=2, label="CUSUM+")
                 ax.plot(c_minus, color="orange", lw=2, label="CUSUM-")
                 ax.axhline(result["ucl"], color="red", linestyle="dashed")
