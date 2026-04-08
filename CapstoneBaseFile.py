@@ -1031,7 +1031,7 @@ def operating_curve():
         'increments': 15,
         'mean': fp.get('params', {}).get('mean', 100) if fp else 100,
         'std': fp.get('params', {}).get('std', 1.0) if fp else 1.0,
-        'replications': min(fp.get('n_replications', 500), 500),
+        'replications': min(fp.get('n_replications', 100), 150),
         'n_baseline': fp.get('n_baseline', 50) 
     }
 
